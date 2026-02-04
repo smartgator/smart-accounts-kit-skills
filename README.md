@@ -13,7 +13,15 @@ This skill gives your AI agent deep knowledge of:
 
 ## Installation
 
-### Via Git (recommended)
+### Via ClawHub (easiest)
+
+```bash
+clawhub install AyushBherwani1998/smart-accounts-kit
+```
+
+Or visit: https://clawhub.ai/AyushBherwani1998/smart-accounts-kit
+
+### Via Git
 
 ```bash
 cd ~/.openclaw/workspace/skills
