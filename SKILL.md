@@ -31,9 +31,16 @@ forge install metamask/delegation-framework@v1.3.0
 
 Three implementation types:
 
-- **Hybrid** (`Implementation.Hybrid`) - EOA + passkey signers
-- **Multisig** (`Implementation.MultiSig`) - Multiple signers with threshold
-- **Stateless7702** (`Implementation.Stateless7702`) - EIP-7702 upgraded EOA
+| Implementation | Best For | Key Feature |
+|---------------|----------|-------------|
+| **Hybrid** (`Implementation.Hybrid`) | Standard dApp users | EOA + passkey signers, most flexible |
+| **MultiSig** (`Implementation.MultiSig`) | Treasury/DAO operations | Threshold-based security, Safe-compatible |
+| **Stateless7702** (`Implementation.Stateless7702`) | Power users with existing EOA | Keep same address, add smart account features via EIP-7702 |
+
+**Decision Guide:**
+- Building for general users? → Hybrid
+- Managing treasuries or multi-party control? → MultiSig  
+- Upgrading existing EOAs without address change? → Stateless7702
 
 ### 2. Delegation Framework (ERC-7710)
 
@@ -356,6 +363,105 @@ const txHash = await walletClient.sendTransactionWithDelegation({
 8. **Multisig threshold** - Need at least threshold signers
 9. **7702 upgrade** - Stateless7702 requires EIP-7702 upgrade first
 
+## Advanced Patterns
+
+### Parallel User Operations (Nonce Keys)
+
+Smart accounts use 256-bit nonces (192-bit key + 64-bit sequence) enabling parallel execution. Critical for backend services processing multiple delegations.
+
+```typescript
+// Execute multiple redemption UserOps in parallel
+const redeems = delegations.map((delegation, index) => {
+  const redeemCalldata = DelegationManager.encode.redeemDelegations({
+    delegations: [[delegation]],
+    modes: [ExecutionMode.SingleDefault],
+    executions: [[execution]],
+  })
+  
+  // Unique nonce key per operation = parallel execution
+  const nonceKey = BigInt(Date.now()) + BigInt(index)
+  
+  return bundlerClient.sendUserOperation({
+    account: backendSmartAccount,
+    calls: [{ to: backendSmartAccount.address, data: redeemCalldata }],
+    nonce: nonceKey,
+  })
+})
+
+await Promise.all(redeems) // All execute concurrently
+```
+
+**Key points:**
+- Different keys = parallel (no ordering guarantees between keys)
+- Same key = sequential (sequence always increments)
+- Use for DCA apps, backend redemption services, high-frequency trading
+
+### Backend Delegation Redemption
+
+For server-side automation (DCA bots, keeper services, automated trading):
+
+```typescript
+// 1. Backend creates its own smart account as delegate
+const backendAccount = await toMetaMaskSmartAccount({
+  client: publicClient,
+  implementation: Implementation.Hybrid,
+  deployParams: [backendOwner.address, [], [], []],
+  deploySalt: '0x',
+  signer: { account: backendOwner },
+})
+
+// 2. Backend redeems by sending UserOp FROM its account
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: backendAccount,
+  calls: [{
+    to: backendAccount.address,
+    data: DelegationManager.encode.redeemDelegations({
+      delegations: [[userDelegation]],
+      modes: [ExecutionMode.SingleDefault],
+      executions: [[swapExecution]],
+    })
+  }],
+})
+```
+
+**Real-world example:** [Ember AI's Fear & Greed DCA](https://dca.ember.engineer) — backend redeems swap delegations based on market sentiment.
+
+### Counterfactual Account Deployment
+
+Delegator accounts must be deployed before delegations can be redeemed. The DelegationManager reverts with `0x3db6791c` for counterfactual accounts.
+
+**Solution:** Deploy automatically via first UserOp:
+
+```typescript
+// First redemption deploys the account automatically
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: smartAccount, // Will deploy if counterfactual via initCode
+  calls: [redeemCalldata],
+})
+```
+
+### Session Accounts for AI Agents
+
+For automated services, create isolated session accounts (signers with no stored keys) that can only act within granted delegations:
+
+```typescript
+// Create ephemeral session account
+const sessionAccount = privateKeyToAccount(generatePrivateKey())
+
+// Request delegation from user to session account
+const delegation = createDelegation({
+  to: sessionAccount.address,
+  from: userSmartAccount.address,
+  environment,
+  scope: { type: 'erc20TransferAmount', tokenAddress, maxAmount: parseUnits('100', 6) },
+  caveats: [
+    { type: 'timestamp', afterThreshold: now, beforeThreshold: expiry },
+    { type: 'limitedCalls', limit: 10 },
+  ],
+})
+// Session account can only act within delegation constraints
+```
+
 ## Common Patterns
 
 ### Pattern 1: ERC-20 with Time Limit
@@ -446,12 +552,32 @@ const bobToCarol = createDelegation({
 | Threshold not met        | Add more signers for multisig                                |
 | 7702 not working         | Confirm EOA upgraded via EIP-7702 first                      |
 
+## Error Code Reference
+
+| Error Code | Meaning | Solution |
+|------------|---------|----------|
+| `0xb5863604` | InvalidDelegation — caller is not the delegate | Verify `msg.sender` equals the `to` address in the delegation |
+| `0x3db6791c` | Counterfactual account — delegator not yet deployed | First UserOp must deploy the account, or use `bundlerClient.sendUserOperation()` |
+
+**From real-world debugging:**
+- `0xb5863604`: Most common when backend tries to redeem from wrong account
+- `0x3db6791c`: Happens when user hasn't made any transactions (account still counterfactual)
+
 ## Resources
 
 - **NPM:** `@metamask/smart-accounts-kit`
 - **Contracts:** `metamask/delegation-framework@v1.3.0`
 - **ERC Standards:** ERC-4337, ERC-7710, ERC-7715, ERC-7579
 - **MetaMask Flask:** https://metamask.io/flask
+
+## Community Contributions
+
+**Real-world patterns from production deployments:**
+- [Ember AI](https://dca.ember.engineer) — Fear & Greed DCA on Base using delegations for automated swaps
+- Parallel nonce patterns for high-throughput backend services
+- Backend delegation redemption for keeper automation
+
+Contributions welcome! Open an issue with your production learnings.
 
 ## Version Info
 
