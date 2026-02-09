@@ -527,10 +527,21 @@ Delegator accounts must be deployed before delegations can be redeemed. The Dele
 **Solution:** Deploy automatically via first UserOp:
 
 ```typescript
-// First redemption deploys the account automatically
+// Build redemption calldata
+const redeemCalldata = DelegationManager.encode.redeemDelegations({
+  delegations: [[signedDelegation]],
+  modes: [ExecutionMode.SingleDefault],
+  executions: [[execution]],
+})
+
+// First redemption deploys the account automatically via initCode
 const userOpHash = await bundlerClient.sendUserOperation({
-  account: smartAccount, // Will deploy if counterfactual via initCode
-  calls: [redeemCalldata],
+  account: smartAccount, // Will deploy if counterfactual
+  calls: [{
+    to: smartAccount.address,
+    data: redeemCalldata,
+    value: 0n,
+  }],
 })
 ```
 
