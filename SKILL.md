@@ -424,7 +424,7 @@ const userOpHash = await bundlerClient.sendUserOperation({
 })
 ```
 
-**Real-world example:** [Ember AI's Fear & Greed DCA](https://dca.ember.engineer) — backend redeems swap delegations based on market sentiment.
+**Use case:** Automated dollar-cost averaging (DCA) bots that redeem swap delegations based on market signals or scheduled intervals.
 
 ### Counterfactual Account Deployment
 
@@ -572,12 +572,12 @@ const bobToCarol = createDelegation({
 
 ## Community Contributions
 
-**Real-world patterns from production deployments:**
-- [Ember AI](https://dca.ember.engineer) — Fear & Greed DCA on Base using delegations for automated swaps
+**Patterns discovered through production use:**
 - Parallel nonce patterns for high-throughput backend services
-- Backend delegation redemption for keeper automation
+- Backend delegation redemption for keeper automation and scheduled execution
+- Session account flows for automated agent services
 
-Contributions welcome! Open an issue with your production learnings.
+Have a pattern from your deployment? Open an issue and share your learnings.
 
 ## Version Info
 
