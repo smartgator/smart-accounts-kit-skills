@@ -667,31 +667,31 @@ Error codes from the MetaMask Delegation Framework contracts. Use a decoder like
 
 | Error Code | Error Name | Meaning |
 |------------|-----------|---------|
-| `0xa55c4c40` | `AlreadyDisabled()` | Delegation has already been disabled |
-| `0x3dba1437` | `AlreadyEnabled()` | Delegation is already enabled |
-| `0xd29f83aa` | `BatchDataLengthMismatch()` | Mismatch in batch array lengths |
-| `0xea5fef6c` | `CannotUseADisabledDelegation()` | Attempting to redeem a disabled delegation |
+| `0x005ecddb` | `AlreadyDisabled()` | Delegation has already been disabled |
+| `0xf2a5f75a` | `AlreadyEnabled()` | Delegation is already enabled |
+| `0x1bcaf69f` | `BatchDataLengthMismatch()` | Mismatch in batch array lengths |
+| `0x05baa052` | `CannotUseADisabledDelegation()` | Attempting to redeem a disabled delegation |
 | `0xf645eedf` | `ECDSAInvalidSignature()` | Invalid ECDSA signature format |
-| `0xf6b9df81` | `ECDSAInvalidSignatureLength(uint256)` | Signature length is incorrect |
-| `0xd9d09b25` | `ECDSAInvalidSignatureS(bytes32)` | Signature S value is invalid |
-| `0xa3c78847` | `EmptySignature()` | Signature is empty |
-| `0x2ac3d3fa` | `EnforcedPause()` | Contract is paused |
-| `0x42e71e11` | `InvalidAuthority()` | Delegation chain authority validation failed |
+| `0xfce698f7` | `ECDSAInvalidSignatureLength(uint256)` | Signature length is incorrect |
+| `0xd78bce0c` | `ECDSAInvalidSignatureS(bytes32)` | Signature S value is invalid |
+| `0xac241e11` | `EmptySignature()` | Signature is empty |
+| `0xd93c0665` | `EnforcedPause()` | Contract is paused |
+| `0xded4370e` | `InvalidAuthority()` | Delegation chain authority validation failed |
 | `0xb5863604` | `InvalidDelegate()` | **Caller is not the delegate** — Most common error |
-| `0x3db6791c` | `InvalidDelegator()` | Caller is not the delegator |
-| `0xba0e2d54` | `InvalidEOASignature()` | EOA signature verification failed |
-| `0x0feae978` | `InvalidERC1271Signature()` | Smart contract signature failed |
+| `0xb9f0f171` | `InvalidDelegator()` | Caller is not the delegator |
+| `0x3db6791c` | `InvalidEOASignature()` | EOA signature verification failed |
+| `0x155ff427` | `InvalidERC1271Signature()` | Smart contract signature failed |
 | `0x118cdaa7` | `OwnableUnauthorizedAccount(address)` | Unauthorized account attempted owner-only action |
 
 ### DeleGatorCore Errors
 
 | Error Code | Error Name | Meaning |
 |------------|-----------|---------|
-| `0x12c5fc9d` | `NotEntryPoint()` | Caller is not the EntryPoint contract |
+| `0xd663742a` | `NotEntryPoint()` | Caller is not the EntryPoint contract |
 | `0xa59f6d8c` | `NotEntryPointOrSelf()` | Caller is neither EntryPoint nor this contract |
-| `0x1b6b4b51` | `NotDelegationManager()` | Caller is not the DelegationManager |
-| `0x3d7a7e42` | `UnsupportedCallType(CallType)` | Execution call type not supported |
-| `0x1f9f8b21` | `UnsupportedExecType(ExecType)` | Execution type not supported |
+| `0x1a4b3a04` | `NotDelegationManager()` | Caller is not the DelegationManager |
+| `0xb96fcfe4` | `UnsupportedCallType(CallType)` | Execution call type not supported |
+| `0x1187dc06` | `UnsupportedExecType(ExecType)` | Execution type not supported |
 
 ### Common Caveat Enforcer Errors (Revert Strings)
 
@@ -712,19 +712,19 @@ Error codes from the MetaMask Delegation Framework contracts. Use a decoder like
 - **Cause:** Caller doesn't match the delegate address in delegation
 - **Fix:** Verify `msg.sender` equals the `to` address in the delegation
 
-**`0x3db6791c` — InvalidDelegator (counterfactual account)**
+**`0xb9f0f171` — InvalidDelegator (counterfactual account)**
 - **Cause:** Delegator smart account not yet deployed
 - **Fix:** First UserOp will auto-deploy via initCode
 
-**`0xea5fef6c` — CannotUseADisabledDelegation**
+**`0x05baa052` — CannotUseADisabledDelegation**
 - **Cause:** Delegation was disabled by delegator
 - **Fix:** Ask delegator to re-enable, or use different delegation
 
-**`0x42e71e11` — InvalidAuthority**
+**`0xded4370e` — InvalidAuthority**
 - **Cause:** Broken delegation chain (redelegation parent mismatch)
 - **Fix:** Ensure redelegation chains are properly ordered (leaf → root)
 
-**`0xd29f83aa` — BatchDataLengthMismatch**
+**`0x1bcaf69f` — BatchDataLengthMismatch**
 - **Cause:** Array lengths don't match in `redeemDelegations` call
 - **Fix:** Ensure `permissionContexts`, `modes`, `executionCallDatas` have equal length
 
