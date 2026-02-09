@@ -367,34 +367,128 @@ const txHash = await walletClient.sendTransactionWithDelegation({
 
 ### Parallel User Operations (Nonce Keys)
 
-Smart accounts use 256-bit nonces (192-bit key + 64-bit sequence) enabling parallel execution. Critical for backend services processing multiple delegations.
+Smart accounts use a 256-bit nonce structure: 192-bit key + 64-bit sequence. Each unique key has its own independent sequence, enabling parallel execution. This is critical for backend services processing multiple delegations concurrently.
 
-```typescript
-// Execute multiple redemption UserOps in parallel
-const redeems = delegations.map((delegation, index) => {
-  const redeemCalldata = DelegationManager.encode.redeemDelegations({
-    delegations: [[delegation]],
-    modes: [ExecutionMode.SingleDefault],
-    executions: [[execution]],
-  })
-  
-  // Unique nonce key per operation = parallel execution
-  const nonceKey = BigInt(Date.now()) + BigInt(index)
-  
-  return bundlerClient.sendUserOperation({
-    account: backendSmartAccount,
-    calls: [{ to: backendSmartAccount.address, data: redeemCalldata }],
-    nonce: nonceKey,
-  })
-})
+#### Installation
 
-await Promise.all(redeems) // All execute concurrently
+For proper nonce handling, install the permissionless SDK alongside the Smart Accounts Kit:
+
+```bash
+npm install permissionless
 ```
 
-**Key points:**
-- Different keys = parallel (no ordering guarantees between keys)
-- Same key = sequential (sequence always increments)
-- Use for DCA apps, backend redemption services, high-frequency trading
+#### How Parallel Nonces Work
+
+ERC-4337 uses a single uint256 nonce where:
+- **192 bits** = key identifier (allows parallel streams)
+- **64 bits** = sequence number (increments per key)
+
+Each key has an independent sequence, so UserOps with different keys execute in parallel without ordering constraints.
+
+#### Getting Nonce with Permissionless
+
+```typescript
+import { getAccountNonce } from 'permissionless'
+import { entryPoint07Address } from 'viem/account-abstraction'
+
+// Get nonce for a specific key
+const parallelNonce = await getAccountNonce(publicClient, {
+  address: smartAccount.address,
+  entryPointAddress: entryPoint07Address,
+  key: BigInt(Date.now()), // Unique key for parallel execution
+})
+
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: smartAccount,
+  calls: [redeemCalldata],
+  nonce: parallelNonce, // Properly encoded 256-bit nonce
+})
+```
+
+#### Parallel Execution Pattern
+
+```typescript
+import { getAccountNonce } from 'permissionless'
+import { entryPoint07Address } from 'viem/account-abstraction'
+
+// Execute multiple redemption UserOps in parallel
+const redeems = await Promise.all(
+  delegations.map(async (delegation, index) => {
+    // Generate unique key for this operation
+    const nonceKey = BigInt(Date.now()) + BigInt(index * 1000)
+    
+    // Get properly encoded nonce for this key
+    const nonce = await getAccountNonce(publicClient, {
+      address: backendSmartAccount.address,
+      entryPointAddress: entryPoint07Address,
+      key: nonceKey,
+    })
+    
+    const redeemCalldata = DelegationManager.encode.redeemDelegations({
+      delegations: [[delegation]],
+      modes: [ExecutionMode.SingleDefault],
+      executions: [[execution]],
+    })
+    
+    return bundlerClient.sendUserOperation({
+      account: backendSmartAccount,
+      calls: [{ to: backendSmartAccount.address, data: redeemCalldata }],
+      nonce, // Parallel execution enabled via unique key
+    })
+  })
+)
+```
+
+#### Without Permissionless (Manual Approach)
+
+The EntryPoint contract encodes nonce as: `sequence | (key << 64)`
+
+If not using permissionless, encode manually:
+
+```typescript
+// EntryPoint: nonceSequenceNumber[sender][key] | (uint256(key) << 64)
+const key = BigInt(Date.now())
+const sequence = 0n // New key starts at sequence 0
+const nonce = sequence | (key << 64n)
+// Or equivalently: (key << 64n) | sequence
+```
+
+However, `getAccountNonce` from permissionless is recommended as it:
+- Fetches the current sequence for the key from the EntryPoint
+- Properly encodes the 256-bit value
+- Handles edge cases and validation
+
+#### Key Points
+
+- **Different keys = parallel execution** — no ordering guarantees between different keys
+- **Same key = sequential execution** — sequence increments monotonically per key
+- **Use cases:** Backend redemption services, DCA apps, high-frequency trading, batch operations
+- **Nonce generation:** `getAccountNonce` returns the full 256-bit nonce properly encoded
+
+#### Common Mistakes
+
+| Mistake | Result |
+|---------|--------|
+| Reusing same nonce key | Sequential execution (defeats purpose) |
+| Using `Date.now()` without offset | Potential collision if multiple ops fire simultaneously |
+| Not using `getAccountNonce` | May miss current sequence, causing replacement instead of new op |
+| Assuming ordering | Race conditions in dependent operations |
+
+#### Error Handling
+
+```typescript
+const results = await Promise.allSettled(redeems)
+
+results.forEach((result, index) => {
+  if (result.status === 'rejected') {
+    // Check for specific errors
+    if (result.reason.message?.includes('AA25')) {
+      console.error(`Nonce collision for op ${index}`)
+    }
+    // Handle or retry
+  }
+})
+```
 
 ### Backend Delegation Redemption
 
