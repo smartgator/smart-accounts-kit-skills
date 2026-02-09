@@ -73,6 +73,15 @@ Ask your agent things like:
 
 > "Build a subscription system using periodic delegations"
 
+## Community Contributions
+
+**Patterns discovered through production use:**
+- Parallel nonce patterns for high-throughput backend services
+- Backend delegation redemption for keeper automation and scheduled execution
+- Session account flows for automated agent services
+
+Have a pattern from your deployment? Open an issue and share your learnings.
+
 ## Resources
 
 - [MetaMask Smart Accounts Kit Docs](https://docs.metamask.io/smart-accounts-kit)

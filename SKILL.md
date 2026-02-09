@@ -442,11 +442,13 @@ const userOpHash = await bundlerClient.sendUserOperation({
 
 ### Session Accounts for AI Agents
 
-For automated services, create isolated session accounts (signers with no stored keys) that can only act within granted delegations:
+For automated services, session accounts act as isolated signers that can only operate within granted delegations. The private key can be generated ephemerally, stored in environment variables, or managed via HSM/server wallets:
 
 ```typescript
-// Create ephemeral session account
-const sessionAccount = privateKeyToAccount(generatePrivateKey())
+// Session account created from various sources
+const sessionAccount = privateKeyToAccount(
+  process.env.SESSION_KEY || generatePrivateKey() || hsmWallet.key
+)
 
 // Request delegation from user to session account
 const delegation = createDelegation({
@@ -569,15 +571,6 @@ const bobToCarol = createDelegation({
 - **Contracts:** `metamask/delegation-framework@v1.3.0`
 - **ERC Standards:** ERC-4337, ERC-7710, ERC-7715, ERC-7579
 - **MetaMask Flask:** https://metamask.io/flask
-
-## Community Contributions
-
-**Patterns discovered through production use:**
-- Parallel nonce patterns for high-throughput backend services
-- Backend delegation redemption for keeper automation and scheduled execution
-- Session account flows for automated agent services
-
-Have a pattern from your deployment? Open an issue and share your learnings.
 
 ## Version Info
 
