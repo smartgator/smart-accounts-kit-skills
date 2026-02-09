@@ -661,14 +661,72 @@ const bobToCarol = createDelegation({
 
 ## Error Code Reference
 
-| Error Code | Meaning | Solution |
-|------------|---------|----------|
-| `0xb5863604` | InvalidDelegation — caller is not the delegate | Verify `msg.sender` equals the `to` address in the delegation |
-| `0x3db6791c` | Counterfactual account — delegator not yet deployed | First UserOp must deploy the account, or use `bundlerClient.sendUserOperation()` |
+Error codes from the MetaMask Delegation Framework contracts. Use a decoder like [calldata.swiss-knife.xyz](https://calldata.swiss-knife.xyz/decoder) to identify error signatures.
 
-**From real-world debugging:**
-- `0xb5863604`: Most common when backend tries to redeem from wrong account
-- `0x3db6791c`: Happens when user hasn't made any transactions (account still counterfactual)
+### DelegationManager Errors
+
+| Error Code | Error Name | Meaning |
+|------------|-----------|---------|
+| `0xa55c4c40` | `AlreadyDisabled()` | Delegation has already been disabled |
+| `0x3dba1437` | `AlreadyEnabled()` | Delegation is already enabled |
+| `0xd29f83aa` | `BatchDataLengthMismatch()` | Mismatch in batch array lengths |
+| `0xea5fef6c` | `CannotUseADisabledDelegation()` | Attempting to redeem a disabled delegation |
+| `0xf645eedf` | `ECDSAInvalidSignature()` | Invalid ECDSA signature format |
+| `0xf6b9df81` | `ECDSAInvalidSignatureLength(uint256)` | Signature length is incorrect |
+| `0xd9d09b25` | `ECDSAInvalidSignatureS(bytes32)` | Signature S value is invalid |
+| `0xa3c78847` | `EmptySignature()` | Signature is empty |
+| `0x2ac3d3fa` | `EnforcedPause()` | Contract is paused |
+| `0x42e71e11` | `InvalidAuthority()` | Delegation chain authority validation failed |
+| `0xb5863604` | `InvalidDelegate()` | **Caller is not the delegate** — Most common error |
+| `0x3db6791c` | `InvalidDelegator()` | Caller is not the delegator |
+| `0xba0e2d54` | `InvalidEOASignature()` | EOA signature verification failed |
+| `0x0feae978` | `InvalidERC1271Signature()` | Smart contract signature failed |
+| `0x118cdaa7` | `OwnableUnauthorizedAccount(address)` | Unauthorized account attempted owner-only action |
+
+### DeleGatorCore Errors
+
+| Error Code | Error Name | Meaning |
+|------------|-----------|---------|
+| `0x12c5fc9d` | `NotEntryPoint()` | Caller is not the EntryPoint contract |
+| `0xa59f6d8c` | `NotEntryPointOrSelf()` | Caller is neither EntryPoint nor this contract |
+| `0x1b6b4b51` | `NotDelegationManager()` | Caller is not the DelegationManager |
+| `0x3d7a7e42` | `UnsupportedCallType(CallType)` | Execution call type not supported |
+| `0x1f9f8b21` | `UnsupportedExecType(ExecType)` | Execution type not supported |
+
+### Common Caveat Enforcer Errors (Revert Strings)
+
+| Error String | Meaning |
+|--------------|---------|
+| `AllowedTargetsEnforcer:target-address-not-allowed` | Target contract not in allowed list |
+| `AllowedTargetsEnforcer:invalid-terms-length` | Terms length not multiple of 20 bytes |
+| `ERC20TransferAmountEnforcer:invalid-terms-length` | Terms must be 52 bytes |
+| `ERC20TransferAmountEnforcer:invalid-contract` | Target doesn't match allowed token |
+| `ERC20TransferAmountEnforcer:invalid-method` | Method is not `transfer` |
+| `ERC20TransferAmountEnforcer:allowance-exceeded` | Transfer exceeds delegated limit |
+| `CaveatEnforcer:invalid-call-type` | Must use single call type |
+| `CaveatEnforcer:invalid-execution-type` | Must use default execution type |
+
+### Most Common Errors in Production
+
+**`0xb5863604` — InvalidDelegate**
+- **Cause:** Caller doesn't match the delegate address in delegation
+- **Fix:** Verify `msg.sender` equals the `to` address in the delegation
+
+**`0x3db6791c` — InvalidDelegator (counterfactual account)**
+- **Cause:** Delegator smart account not yet deployed
+- **Fix:** First UserOp will auto-deploy via initCode
+
+**`0xea5fef6c` — CannotUseADisabledDelegation**
+- **Cause:** Delegation was disabled by delegator
+- **Fix:** Ask delegator to re-enable, or use different delegation
+
+**`0x42e71e11` — InvalidAuthority**
+- **Cause:** Broken delegation chain (redelegation parent mismatch)
+- **Fix:** Ensure redelegation chains are properly ordered (leaf → root)
+
+**`0xd29f83aa` — BatchDataLengthMismatch**
+- **Cause:** Array lengths don't match in `redeemDelegations` call
+- **Fix:** Ensure `permissionContexts`, `modes`, `executionCallDatas` have equal length
 
 ## Resources
 
