@@ -31,9 +31,16 @@ forge install metamask/delegation-framework@v1.3.0
 
 Three implementation types:
 
-- **Hybrid** (`Implementation.Hybrid`) - EOA + passkey signers
-- **Multisig** (`Implementation.MultiSig`) - Multiple signers with threshold
-- **Stateless7702** (`Implementation.Stateless7702`) - EIP-7702 upgraded EOA
+| Implementation | Best For | Key Feature |
+|---------------|----------|-------------|
+| **Hybrid** (`Implementation.Hybrid`) | Standard dApp users | EOA + passkey signers, most flexible |
+| **MultiSig** (`Implementation.MultiSig`) | Treasury/DAO operations | Threshold-based security, Safe-compatible |
+| **Stateless7702** (`Implementation.Stateless7702`) | Power users with existing EOA | Keep same address, add smart account features via EIP-7702 |
+
+**Decision Guide:**
+- Building for general users? → Hybrid
+- Managing treasuries or multi-party control? → MultiSig  
+- Upgrading existing EOAs without address change? → Stateless7702
 
 ### 2. Delegation Framework (ERC-7710)
 
@@ -356,6 +363,212 @@ const txHash = await walletClient.sendTransactionWithDelegation({
 8. **Multisig threshold** - Need at least threshold signers
 9. **7702 upgrade** - Stateless7702 requires EIP-7702 upgrade first
 
+## Advanced Patterns
+
+### Parallel User Operations (Nonce Keys)
+
+Smart accounts use a 256-bit nonce structure: 192-bit key + 64-bit sequence. Each unique key has its own independent sequence, enabling parallel execution. This is critical for backend services processing multiple delegations concurrently.
+
+#### Installation
+
+For proper nonce handling, install the permissionless SDK alongside the Smart Accounts Kit:
+
+```bash
+npm install permissionless
+```
+
+#### How Parallel Nonces Work
+
+ERC-4337 uses a single uint256 nonce where:
+- **192 bits** = key identifier (allows parallel streams)
+- **64 bits** = sequence number (increments per key)
+
+Each key has an independent sequence, so UserOps with different keys execute in parallel without ordering constraints.
+
+#### Getting Nonce with Permissionless
+
+```typescript
+import { getAccountNonce } from 'permissionless'
+import { entryPoint07Address } from 'viem/account-abstraction'
+
+// Get nonce for a specific key
+const parallelNonce = await getAccountNonce(publicClient, {
+  address: smartAccount.address,
+  entryPointAddress: entryPoint07Address,
+  key: BigInt(Date.now()), // Unique key for parallel execution
+})
+
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: smartAccount,
+  calls: [redeemCalldata],
+  nonce: parallelNonce, // Properly encoded 256-bit nonce
+})
+```
+
+#### Parallel Execution Pattern
+
+```typescript
+import { getAccountNonce } from 'permissionless'
+import { entryPoint07Address } from 'viem/account-abstraction'
+
+// Execute multiple redemption UserOps in parallel
+const redeems = await Promise.all(
+  delegations.map(async (delegation, index) => {
+    // Generate unique key for this operation
+    const nonceKey = BigInt(Date.now()) + BigInt(index * 1000)
+    
+    // Get properly encoded nonce for this key
+    const nonce = await getAccountNonce(publicClient, {
+      address: backendSmartAccount.address,
+      entryPointAddress: entryPoint07Address,
+      key: nonceKey,
+    })
+    
+    const redeemCalldata = DelegationManager.encode.redeemDelegations({
+      delegations: [[delegation]],
+      modes: [ExecutionMode.SingleDefault],
+      executions: [[execution]],
+    })
+    
+    return bundlerClient.sendUserOperation({
+      account: backendSmartAccount,
+      calls: [{ to: backendSmartAccount.address, data: redeemCalldata }],
+      nonce, // Parallel execution enabled via unique key
+    })
+  })
+)
+```
+
+#### Without Permissionless (Manual Approach)
+
+The EntryPoint contract encodes nonce as: `sequence | (key << 64)`
+
+If not using permissionless, encode manually:
+
+```typescript
+// EntryPoint: nonceSequenceNumber[sender][key] | (uint256(key) << 64)
+const key = BigInt(Date.now())
+const sequence = 0n // New key starts at sequence 0
+const nonce = sequence | (key << 64n)
+// Or equivalently: (key << 64n) | sequence
+```
+
+However, `getAccountNonce` from permissionless is recommended as it:
+- Fetches the current sequence for the key from the EntryPoint
+- Properly encodes the 256-bit value
+- Handles edge cases and validation
+
+#### Key Points
+
+- **Different keys = parallel execution** — no ordering guarantees between different keys
+- **Same key = sequential execution** — sequence increments monotonically per key
+- **Use cases:** Backend redemption services, DCA apps, high-frequency trading, batch operations
+- **Nonce generation:** `getAccountNonce` returns the full 256-bit nonce properly encoded
+
+#### Common Mistakes
+
+| Mistake | Result |
+|---------|--------|
+| Reusing same nonce key | Sequential execution (defeats purpose) |
+| Using `Date.now()` without offset | Potential collision if multiple ops fire simultaneously |
+| Not using `getAccountNonce` | May miss current sequence, causing replacement instead of new op |
+| Assuming ordering | Race conditions in dependent operations |
+
+#### Error Handling
+
+```typescript
+const results = await Promise.allSettled(redeems)
+
+results.forEach((result, index) => {
+  if (result.status === 'rejected') {
+    // Check for specific errors
+    if (result.reason.message?.includes('AA25')) {
+      console.error(`Nonce collision for op ${index}`)
+    }
+    // Handle or retry
+  }
+})
+```
+
+### Backend Delegation Redemption
+
+For server-side automation (DCA bots, keeper services, automated trading):
+
+```typescript
+// 1. Backend creates its own smart account as delegate
+const backendAccount = await toMetaMaskSmartAccount({
+  client: publicClient,
+  implementation: Implementation.Hybrid,
+  deployParams: [backendOwner.address, [], [], []],
+  deploySalt: '0x',
+  signer: { account: backendOwner },
+})
+
+// 2. Backend redeems by sending UserOp FROM its account
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: backendAccount,
+  calls: [{
+    to: backendAccount.address,
+    data: DelegationManager.encode.redeemDelegations({
+      delegations: [[userDelegation]],
+      modes: [ExecutionMode.SingleDefault],
+      executions: [[swapExecution]],
+    })
+  }],
+})
+```
+
+**Use case:** Automated dollar-cost averaging (DCA) bots that redeem swap delegations based on market signals or scheduled intervals.
+
+### Counterfactual Account Deployment
+
+Delegator accounts must be deployed before delegations can be redeemed. The DelegationManager reverts with `0x3db6791c` for counterfactual accounts.
+
+**Solution:** Deploy automatically via first UserOp:
+
+```typescript
+// Build redemption calldata
+const redeemCalldata = DelegationManager.encode.redeemDelegations({
+  delegations: [[signedDelegation]],
+  modes: [ExecutionMode.SingleDefault],
+  executions: [[execution]],
+})
+
+// First redemption deploys the account automatically via initCode
+const userOpHash = await bundlerClient.sendUserOperation({
+  account: smartAccount, // Will deploy if counterfactual
+  calls: [{
+    to: smartAccount.address,
+    data: redeemCalldata,
+    value: 0n,
+  }],
+})
+```
+
+### Session Accounts for AI Agents
+
+For automated services, session accounts act as isolated signers that can only operate within granted delegations. The private key can be generated ephemerally, stored in environment variables, or managed via HSM/server wallets:
+
+```typescript
+// Session account created from various sources
+const sessionAccount = privateKeyToAccount(
+  process.env.SESSION_KEY || generatePrivateKey() || hsmWallet.key
+)
+
+// Request delegation from user to session account
+const delegation = createDelegation({
+  to: sessionAccount.address,
+  from: userSmartAccount.address,
+  environment,
+  scope: { type: 'erc20TransferAmount', tokenAddress, maxAmount: parseUnits('100', 6) },
+  caveats: [
+    { type: 'timestamp', afterThreshold: now, beforeThreshold: expiry },
+    { type: 'limitedCalls', limit: 10 },
+  ],
+})
+// Session account can only act within delegation constraints
+```
+
 ## Common Patterns
 
 ### Pattern 1: ERC-20 with Time Limit
@@ -445,6 +658,17 @@ const bobToCarol = createDelegation({
 | Permission denied        | Handle gracefully, provide manual fallback                   |
 | Threshold not met        | Add more signers for multisig                                |
 | 7702 not working         | Confirm EOA upgraded via EIP-7702 first                      |
+
+## Error Code Reference
+
+| Error Code | Meaning | Solution |
+|------------|---------|----------|
+| `0xb5863604` | InvalidDelegation — caller is not the delegate | Verify `msg.sender` equals the `to` address in the delegation |
+| `0x3db6791c` | Counterfactual account — delegator not yet deployed | First UserOp must deploy the account, or use `bundlerClient.sendUserOperation()` |
+
+**From real-world debugging:**
+- `0xb5863604`: Most common when backend tries to redeem from wrong account
+- `0x3db6791c`: Happens when user hasn't made any transactions (account still counterfactual)
 
 ## Resources
 
