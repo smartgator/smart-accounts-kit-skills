@@ -682,14 +682,16 @@ Error codes from the MetaMask Delegation Framework contracts. Use a decoder like
 | `0x3db6791c` | `InvalidEOASignature()` | EOA signature verification failed |
 | `0x155ff427` | `InvalidERC1271Signature()` | Smart contract signature failed |
 | `0x118cdaa7` | `OwnableUnauthorizedAccount(address)` | Unauthorized account attempted owner-only action |
+| `0x1e4fbdf7` | `OwnableInvalidOwner(address)` | Invalid owner address in ownership transfer |
 
 ### DeleGatorCore Errors
 
 | Error Code | Error Name | Meaning |
 |------------|-----------|---------|
 | `0xd663742a` | `NotEntryPoint()` | Caller is not the EntryPoint contract |
-| `0xa59f6d8c` | `NotEntryPointOrSelf()` | Caller is neither EntryPoint nor this contract |
+| `0x0796d945` | `NotEntryPointOrSelf()` | Caller is neither EntryPoint nor this contract |
 | `0x1a4b3a04` | `NotDelegationManager()` | Caller is not the DelegationManager |
+| `0x29c3b7ee` | `NotSelf()` | Caller is not this contract itself |
 | `0xb96fcfe4` | `UnsupportedCallType(CallType)` | Execution call type not supported |
 | `0x1187dc06` | `UnsupportedExecType(ExecType)` | Execution type not supported |
 
